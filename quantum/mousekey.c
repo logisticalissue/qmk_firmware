@@ -49,6 +49,8 @@ static int8_t  mousekey_x_dir     = 0; // -1 / 0 / 1 = left / neutral / right
 static int8_t  mousekey_y_dir     = 0; // -1 / 0 / 0 = up / neutral / down
 static float  mousekey_x_inertia = 0; // current velocity, limit +/- MOUSEKEY_TIME_TO_MAX
 static float  mousekey_y_inertia = 0; // ...
+static float  mousekey_x_frac = 0;
+static float  mousekey_y_frac = 0;
 #endif
 #ifdef MK_KINETIC_SPEED
 static uint16_t mouse_timer = 0;
@@ -113,18 +115,28 @@ static uint8_t move_unit(void) {
 
 #            else // MOUSEKEY_INERTIA mode
 
+#ifndef MOUSEKEY_INERTIA_SLOW_DIVISOR
+#define MOUSEKEY_INERTIA_SLOW_DIVISOR 2
+#endif
+#ifndef MOUSEKEY_INERTIA_SLOW_MAX_SPEED
+#define MOUSEKEY_INERTIA_SLOW_MAX_SPEED (mk_time_to_max / 4)
+#endif
+
 static int8_t move_unit(uint8_t axis) {
     int16_t unit;
 
     // handle X or Y axis
     int8_t dir;
     float inertia;
+    float *frac;
     if (axis) {
         inertia = mousekey_y_inertia;
         dir     = mousekey_y_dir;
+        frac    = &mousekey_y_frac;
     } else {
         inertia = mousekey_x_inertia;
         dir     = mousekey_x_dir;
+        frac    = &mousekey_x_frac;
     }
 
     int16_t base_move = dir * MOUSEKEY_MOVE_DELTA * 2;
@@ -135,6 +147,18 @@ static int8_t move_unit(uint8_t axis) {
     } else { // acceleration
         // linear acceleration (is here for reference, but doesn't feel as good during use)
         unit = base_move + (MOUSEKEY_MOVE_DELTA * mk_max_speed * inertia / 2) / mk_time_to_max;
+    }
+
+    if (mousekey_accel & (1 << 0)) {
+        float slow = ((float)unit / MOUSEKEY_INERTIA_SLOW_DIVISOR) + *frac;
+        unit       = (int16_t)slow;
+        *frac      = slow - unit;
+        if (unit == 0 && dir != 0 && mousekey_frame < 2) {
+            unit  = dir;
+            *frac = 0;
+        }
+    } else {
+        *frac = 0;
     }
 
     if (unit > MOUSEKEY_MOVE_MAX)
@@ -275,6 +299,7 @@ static uint8_t wheel_unit(void) {
 
 static int8_t calc_inertia(int8_t direction, float velocity) {
     // simulate acceleration and deceleration
+    float max_velocity = (mousekey_accel & (1 << 0)) ? MOUSEKEY_INERTIA_SLOW_MAX_SPEED : mk_time_to_max;
 
     if (direction == 0 && velocity != 0)
         // deceleration when no input on one of two axes.
@@ -284,10 +309,15 @@ static int8_t calc_inertia(int8_t direction, float velocity) {
         velocity = velocity * (256 - 16) / 256;
 
     // acceleration
-    if ((direction > 0) && (velocity < mk_time_to_max))
+    if ((direction > 0) && (velocity < max_velocity))
         velocity++;
-    else if ((direction < 0) && (velocity > -mk_time_to_max))
+    else if ((direction < 0) && (velocity > -max_velocity))
         velocity--;
+
+    if (velocity > max_velocity)
+        velocity = max_velocity;
+    else if (velocity < -max_velocity)
+        velocity = -max_velocity;
 
     return velocity;
 }
@@ -661,6 +691,8 @@ void mousekey_clear(void) {
     mousekey_frame     = 0;
     mousekey_x_inertia = 0;
     mousekey_y_inertia = 0;
+    mousekey_x_frac    = 0;
+    mousekey_y_frac    = 0;
     mousekey_x_dir     = 0;
     mousekey_y_dir     = 0;
 #endif
