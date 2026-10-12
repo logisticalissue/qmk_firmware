@@ -136,13 +136,15 @@ enum desktop_usages {
 
 #define NKRO_REPORT_BITS 30
 
-#ifdef KEYBOARD_SHARED_EP
-#    define KEYBOARD_REPORT_SIZE 9
-#else
-#    define KEYBOARD_REPORT_SIZE 8
+#ifndef KEYBOARD_REPORT_KEYS
+#    define KEYBOARD_REPORT_KEYS 6
 #endif
 
-#define KEYBOARD_REPORT_KEYS 6
+#ifdef KEYBOARD_SHARED_EP
+#    define KEYBOARD_REPORT_SIZE (KEYBOARD_REPORT_KEYS + 3)
+#else
+#    define KEYBOARD_REPORT_SIZE (KEYBOARD_REPORT_KEYS + 2)
+#endif
 
 #ifdef __cplusplus
 extern "C" {
